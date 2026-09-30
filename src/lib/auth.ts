@@ -49,7 +49,7 @@ export const auth = betterAuth({
     cookieCache: { enabled: true, maxAge: 60 * 5 },
   },
   advanced: {
-    database: { joins: true },
+    database: { joins: false },
     cookiePrefix: "melddb",
     useSecureCookies: process.env.NODE_ENV === "production",
   },
