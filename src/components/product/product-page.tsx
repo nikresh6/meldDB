@@ -60,7 +60,64 @@ function NodesPage({ project, data }: Omit<ProductPageProps, "section">) {
 }
 
 function CapacityPage({ data }: { data: ProjectData }) {
-  return <div className="product-page"><div className="page-header"><div><h1>Capacity</h1><p>Provider quotas shown independently. Limits may change; API values take precedence over dated fallbacks.</p></div></div><div className="capacity-grid">{providers.map((provider) => { const capacity = data.capacities.find((item) => item.provider === provider); const resourceCount = data.resources.filter((item) => item.provider === provider).length; const limit = capacity?.resourceLimit; const used = capacity?.resourcesUsed ?? resourceCount; return <section className="panel" key={provider}><div className="panel-header"><h2>{providerName(provider)}</h2><span>{capacity?.source?.replaceAll("_", " ") ?? "NOT CHECKED"}</span></div><div className="capacity-card-body"><strong>{used} <span>/ {limit ?? "?"}</span></strong><p>{capacity?.resourcesRemaining === null || capacity?.resourcesRemaining === undefined ? "Connect to read current capacity" : `${capacity.resourcesRemaining} resource slots remaining`}</p><div className="capacity-bar"><i style={{ width: limit ? `${Math.min(100, used / limit * 100)}%` : "0%" }} /></div><dl><div><dt>Per resource storage</dt><dd>{bytes(capacity?.storagePerResourceBytes ?? null)}</dd></div><div><dt>Plan</dt><dd>{capacity?.plan ?? "Unknown"}</dd></div><div><dt>Checked</dt><dd>{capacity ? new Date(capacity.checkedAt).toLocaleString() : "Never"}</dd></div></dl></div></section>; })}</div><div className="status-banner capacity-note"><AlertTriangle /> Capacity is not fungible: PostgreSQL and SQLite nodes retain their own compute, request, egress, feature, and storage constraints.</div></div>;
+  const totalUsed = data.resources.reduce((sum, resource) => sum + (resource.storageUsedBytes ?? 0), 0);
+  const resourcesWithKnownLimits = data.resources.filter((resource) => resource.storageLimitBytes !== null);
+  const totalLimit = resourcesWithKnownLimits.reduce((sum, resource) => sum + (resource.storageLimitBytes ?? 0), 0);
+  const totalPercent = totalLimit ? Math.min(100, totalUsed / totalLimit * 100) : 0;
+
+  return <div className="product-page">
+    <div className="page-header"><div><h1>Capacity</h1><p>Actual database usage first. Each attached database keeps its own provider limits, with a combined storage view below.</p></div></div>
+
+    <div className="capacity-grid">
+      {data.resources.map((resource) => {
+        const used = resource.storageUsedBytes;
+        const limit = resource.storageLimitBytes;
+        const percent = used !== null && limit ? Math.min(100, used / limit * 100) : 0;
+        return <section className="panel" key={resource.id}>
+          <div className="panel-header"><h2>{resource.name}</h2><span>{providerName(resource.provider)}</span></div>
+          <div className="capacity-card-body">
+            <strong>{bytes(used)} <span>/ {bytes(limit)}</span></strong>
+            <p>{used === null ? "Storage usage has not been checked yet" : limit ? `${Math.round(percent)}% of known database storage used` : "Storage usage reported, provider limit unknown"}</p>
+            <div className="capacity-bar"><i style={{ width: `${percent}%` }} /></div>
+            <dl>
+              <div><dt>Provider</dt><dd>{providerName(resource.provider)}</dd></div>
+              <div><dt>Database</dt><dd>{resource.dialect === "postgresql" ? "PostgreSQL" : "SQLite"}</dd></div>
+              <div><dt>Region</dt><dd>{resource.region ?? (resource.provider === "cloudflare-d1" ? "Global" : "Unknown")}</dd></div>
+              <div><dt>State</dt><dd>{resource.state.replaceAll("_", " ")}</dd></div>
+              <div><dt>Latency</dt><dd>{resource.latencyMs === null ? "Unknown" : `${resource.latencyMs} ms`}</dd></div>
+              <div><dt>Checked</dt><dd>{resource.lastCheckedAt ? new Date(resource.lastCheckedAt).toLocaleString() : "Never"}</dd></div>
+            </dl>
+          </div>
+        </section>;
+      })}
+      {!data.resources.length && <section className="panel"><div className="panel-header"><h2>No databases attached</h2><span>WAITING</span></div><div className="capacity-card-body"><p>Attach a Supabase, Neon, or Cloudflare D1 database to start tracking real storage usage here.</p></div></section>}
+    </div>
+
+    <section className="panel" style={{ marginTop: 16 }}>
+      <div className="panel-header"><h2>Total attached storage</h2><span>{data.resources.length} DATABASE{data.resources.length === 1 ? "" : "S"}</span></div>
+      <div className="capacity-card-body">
+        <strong>{bytes(totalUsed)} <span>/ {resourcesWithKnownLimits.length === data.resources.length && data.resources.length ? bytes(totalLimit) : data.resources.length ? "partially known" : "unknown"}</span></strong>
+        <p>{data.resources.length ? `${resourcesWithKnownLimits.length} of ${data.resources.length} attached databases have a known storage ceiling` : "No attached databases yet"}</p>
+        <div className="capacity-bar"><i style={{ width: `${totalPercent}%` }} /></div>
+        <dl>
+          <div><dt>Known storage used</dt><dd>{bytes(totalUsed)}</dd></div>
+          <div><dt>Known storage ceiling</dt><dd>{totalLimit ? bytes(totalLimit) : "Unknown"}</dd></div>
+          <div><dt>PostgreSQL nodes</dt><dd>{data.resources.filter((resource) => resource.dialect === "postgresql").length}</dd></div>
+          <div><dt>SQLite nodes</dt><dd>{data.resources.filter((resource) => resource.dialect === "sqlite").length}</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section className="panel" style={{ marginTop: 16 }}>
+      <div className="panel-header"><h2>Provider account limits</h2><span>SECONDARY</span></div>
+      <div className="table-scroll"><table className="data-table"><thead><tr><th>Provider</th><th>Plan</th><th>Active resources</th><th>Known limit</th><th>Remaining</th><th>Checked</th></tr></thead><tbody>
+        {providers.map((provider) => {
+          const capacity = data.capacities.find((item) => item.provider === provider);
+          return <tr key={provider}><td>{providerName(provider)}</td><td>{capacity?.plan ?? "Unknown"}</td><td>{capacity?.resourcesUsed ?? "Unknown"}</td><td>{capacity?.resourceLimit ?? "Unknown"}</td><td>{capacity?.resourcesRemaining ?? "Unknown"}</td><td>{capacity ? new Date(capacity.checkedAt).toLocaleString() : "Never"}</td></tr>;
+        })}
+      </tbody></table></div>
+    </section>
+  </div>;
 }
 
 function SettingsPage({ project }: Pick<ProductPageProps, "project">) {
