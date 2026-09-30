@@ -21,7 +21,6 @@ export function ResourceManager({ projectId, provider, hasAttached }: { projectI
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
     fetch(`/api/projects/${projectId}/providers/${provider}/resources`)
       .then(async (response) => {
         const body = await response.json() as { data?: RemoteResource[]; capacity?: Capacity; attachedExternalIds?: string[]; error?: { message?: string } };
