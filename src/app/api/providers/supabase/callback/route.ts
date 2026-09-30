@@ -2,6 +2,7 @@ import { MeldError } from "@melddb/core";
 import { requireSession } from "@/lib/authorization";
 import { errorResponse, requestId } from "@/lib/http";
 import { consumeOAuthAttempt, exchangeAuthorizationCode, persistProviderTokens } from "@/lib/provider-oauth";
+import { oauthRedirectUri } from "@/lib/app-url";
 
 export async function GET(request: Request) {
   const id = requestId(request);
@@ -14,8 +15,8 @@ export async function GET(request: Request) {
     const attempt = await consumeOAuthAttempt(state, "supabase", session.user.id);
     const clientId = process.env.SUPABASE_OAUTH_CLIENT_ID;
     const clientSecret = process.env.SUPABASE_OAUTH_CLIENT_SECRET;
-    const redirectUri = process.env.SUPABASE_OAUTH_REDIRECT_URI;
-    if (!clientId || !clientSecret || !redirectUri) throw new MeldError({ code: "CONFIGURATION_REQUIRED", message: "Supabase OAuth is not configured.", status: 503 });
+    const redirectUri = oauthRedirectUri("supabase");
+    if (!clientId || !clientSecret) throw new MeldError({ code: "CONFIGURATION_REQUIRED", message: "Supabase OAuth is not configured.", status: 503 });
     const tokens = await exchangeAuthorizationCode({
       tokenUrl: "https://api.supabase.com/v1/oauth/token",
       clientId,
