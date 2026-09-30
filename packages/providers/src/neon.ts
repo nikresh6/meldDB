@@ -21,6 +21,29 @@ import { quoteIdentifier, stringValue } from "./http";
 
 type NeonClient = Pick<Api<unknown>, "listProjects" | "createProject" | "getProject">;
 
+interface ExistingProjectAccess {
+  resource: ProviderResource;
+  connectionUri: string;
+  branchId: string;
+  databaseName: string;
+  roleName: string;
+}
+
+interface NeonBranch {
+  id: string;
+  name?: string;
+}
+
+interface NeonDatabase {
+  name: string;
+  owner_name?: string;
+}
+
+interface NeonRole {
+  name: string;
+  protected?: boolean;
+}
+
 export class NeonAdapter implements DatabaseProviderAdapter {
   readonly providerId = "neon" as const;
   readonly displayName = "Neon";
@@ -42,7 +65,7 @@ export class NeonAdapter implements DatabaseProviderAdapter {
   private queryClient?: Sql;
 
   constructor(
-    apiKey: string,
+    private readonly apiKey: string,
     client?: NeonClient,
     private readonly dataConnectionUri?: string,
   ) {
@@ -87,6 +110,93 @@ export class NeonAdapter implements DatabaseProviderAdapter {
     return this.normalizeProject(response.data.project);
   }
 
+  async attachResourceWithCredentials(externalId: string): Promise<ExistingProjectAccess> {
+    const response = await this.client.getProject(externalId);
+    const project = response.data.project as Project & {
+      default_branch_id?: string;
+      database_name?: string;
+      database_user?: string;
+    };
+
+    const branchId = project.default_branch_id ?? await this.resolveDefaultBranchId(externalId);
+    const databases = await this.managementGet<{ databases?: NeonDatabase[] }>(
+      `/projects/${encodeURIComponent(externalId)}/branches/${encodeURIComponent(branchId)}/databases`,
+    );
+    const databaseList = Array.isArray(databases.databases) ? databases.databases : [];
+    if (!databaseList.length) {
+      throw new MeldError({
+        code: "PROVIDER_ERROR",
+        provider: this.providerId,
+        status: 502,
+        message: "Neon returned no databases for the project's default branch.",
+      });
+    }
+
+    const databaseName =
+      project.database_name && databaseList.some((database) => database.name === project.database_name)
+        ? project.database_name
+        : databaseList.find((database) => database.name === "neondb")?.name ?? databaseList[0]!.name;
+
+    const database = databaseList.find((candidate) => candidate.name === databaseName) ?? databaseList[0]!;
+    let roleName = project.database_user ?? database.owner_name;
+
+    if (!roleName) {
+      const roles = await this.managementGet<{ roles?: NeonRole[] }>(
+        `/projects/${encodeURIComponent(externalId)}/branches/${encodeURIComponent(branchId)}/roles`,
+      );
+      const roleList = Array.isArray(roles.roles) ? roles.roles : [];
+      roleName =
+        roleList.find((role) => role.name === `${databaseName}_owner`)?.name ??
+        roleList.find((role) => role.protected !== true)?.name ??
+        roleList[0]?.name;
+    }
+
+    if (!roleName) {
+      throw new MeldError({
+        code: "PROVIDER_ERROR",
+        provider: this.providerId,
+        status: 502,
+        message: "Neon returned no database role that MeldDB can use for this project.",
+      });
+    }
+
+    const params = new URLSearchParams({
+      database_name: databaseName,
+      role_name: roleName,
+      branch_id: branchId,
+      pooled: "true",
+    });
+    const connection = await this.managementGet<{ uri?: string }>(
+      `/projects/${encodeURIComponent(externalId)}/connection_uri?${params.toString()}`,
+    );
+    if (!connection.uri) {
+      throw new MeldError({
+        code: "PROVIDER_ERROR",
+        provider: this.providerId,
+        status: 502,
+        message: "Neon did not return a connection URI for this project.",
+      });
+    }
+
+    const resource = this.normalizeProject(project);
+    return {
+      resource: {
+        ...resource,
+        metadata: {
+          ...resource.metadata,
+          branchId,
+          databaseName,
+          roleName,
+          dataAccess: true,
+        },
+      },
+      connectionUri: connection.uri,
+      branchId,
+      databaseName,
+      roleName,
+    };
+  }
+
   async disconnectResource(): Promise<void> {
     // Local-only by design; Neon resources remain in the customer's account.
   }
@@ -101,11 +211,11 @@ export class NeonAdapter implements DatabaseProviderAdapter {
   }
 
   async getSchema(externalId: string): Promise<TableDescription[]> {
-    const tables = await this.listTables();
+    const tables = await this.listTables(externalId);
     return Promise.all(tables.map((table) => this.describeTable(externalId, table.name, table.schema ?? undefined)));
   }
 
-  async listTables(): Promise<TableSummary[]> {
+  async listTables(_externalId?: string): Promise<TableSummary[]> {
     const result = await this.runDataQuery(
       "select table_schema, table_name from information_schema.tables where table_type = $1 and table_schema not in ($2, $3) order by table_schema, table_name",
       ["BASE TABLE", "pg_catalog", "information_schema"],
@@ -119,14 +229,33 @@ export class NeonAdapter implements DatabaseProviderAdapter {
 
   async describeTable(_externalId: string, table: string, schema = "public"): Promise<TableDescription> {
     const result = await this.runDataQuery(
-      "select column_name, data_type, is_nullable, column_default from information_schema.columns where table_schema = $1 and table_name = $2 order by ordinal_position",
+      `select
+        c.column_name,
+        c.data_type,
+        c.is_nullable,
+        c.column_default,
+        exists (
+          select 1
+          from information_schema.table_constraints tc
+          join information_schema.key_column_usage kcu
+            on tc.constraint_name = kcu.constraint_name
+           and tc.constraint_schema = kcu.constraint_schema
+           and tc.table_name = kcu.table_name
+          where tc.constraint_type = 'PRIMARY KEY'
+            and tc.table_schema = c.table_schema
+            and tc.table_name = c.table_name
+            and kcu.column_name = c.column_name
+        ) as is_primary_key
+      from information_schema.columns c
+      where c.table_schema = $1 and c.table_name = $2
+      order by c.ordinal_position`,
       [schema, table],
     );
     const columns: ColumnDescription[] = result.rows.map((row) => ({
       name: stringValue(row.column_name) ?? "unknown",
       dataType: stringValue(row.data_type) ?? "text",
       nullable: row.is_nullable === "YES",
-      primaryKey: false,
+      primaryKey: row.is_primary_key === true,
       defaultValue: stringValue(row.column_default),
     }));
     return { schema, name: table, rowCount: null, columns };
@@ -186,13 +315,55 @@ export class NeonAdapter implements DatabaseProviderAdapter {
     };
   }
 
+  private async resolveDefaultBranchId(projectId: string): Promise<string> {
+    const response = await this.managementGet<{ branches?: NeonBranch[] }>(
+      `/projects/${encodeURIComponent(projectId)}/branches`,
+    );
+    const branches = Array.isArray(response.branches) ? response.branches : [];
+    const branch = branches.find((candidate) => candidate.name === "production") ??
+      branches.find((candidate) => candidate.name === "main") ??
+      branches[0];
+    if (!branch?.id) {
+      throw new MeldError({
+        code: "PROVIDER_ERROR",
+        provider: this.providerId,
+        status: 502,
+        message: "Neon returned no branch for this project.",
+      });
+    }
+    return branch.id;
+  }
+
+  private async managementGet<T>(path: string): Promise<T> {
+    const response = await fetch(`https://console.neon.tech/api/v2${path}`, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    const body = (await response.json().catch(() => ({}))) as T & {
+      message?: string;
+      error?: { message?: string };
+    };
+    if (!response.ok) {
+      throw new MeldError({
+        code: response.status === 401 || response.status === 403 ? "CREDENTIALS_EXPIRED" : "PROVIDER_ERROR",
+        provider: this.providerId,
+        status: response.status === 401 || response.status === 403 ? 401 : 502,
+        message: body.error?.message ?? body.message ?? "Neon rejected a management API request.",
+      });
+    }
+    return body;
+  }
+
   private getDataClient(): Sql {
     if (!this.dataConnectionUri) {
       throw new MeldError({
         code: "CONFIGURATION_REQUIRED",
         provider: this.providerId,
         status: 409,
-        message: "A project-scoped Neon database credential is required for data operations. Attach the project and let MeldDB provision or store that credential first.",
+        message: "A project-scoped Neon database credential is required for data operations. Sync the resource to let MeldDB retrieve and encrypt one.",
       });
     }
     this.queryClient ??= postgres(this.dataConnectionUri, { max: 2, prepare: false, connect_timeout: 10, idle_timeout: 20 });
