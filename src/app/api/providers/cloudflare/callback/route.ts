@@ -2,6 +2,7 @@ import { MeldError } from "@melddb/core";
 import { requireSession } from "@/lib/authorization";
 import { errorResponse, requestId } from "@/lib/http";
 import { consumeOAuthAttempt, exchangeAuthorizationCode, persistProviderTokens } from "@/lib/provider-oauth";
+import { oauthRedirectUri } from "@/lib/app-url";
 
 export async function GET(request: Request) {
   const id = requestId(request);
@@ -14,8 +15,8 @@ export async function GET(request: Request) {
     const attempt = await consumeOAuthAttempt(state, "cloudflare-d1", session.user.id);
     const clientId = process.env.CLOUDFLARE_OAUTH_CLIENT_ID;
     const clientSecret = process.env.CLOUDFLARE_OAUTH_CLIENT_SECRET;
-    const redirectUri = process.env.CLOUDFLARE_OAUTH_REDIRECT_URI;
-    if (!clientId || !clientSecret || !redirectUri) throw new MeldError({ code: "CONFIGURATION_REQUIRED", message: "Cloudflare OAuth is not configured.", status: 503 });
+    const redirectUri = oauthRedirectUri("cloudflare");
+    if (!clientId || !clientSecret) throw new MeldError({ code: "CONFIGURATION_REQUIRED", message: "Cloudflare OAuth is not configured.", status: 503 });
     const tokens = await exchangeAuthorizationCode({
       tokenUrl: "https://dash.cloudflare.com/oauth2/token",
       clientId,
