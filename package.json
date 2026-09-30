@@ -1,0 +1,69 @@
+{
+  "name": "melddb",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "One database experience across the cloud databases you own.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:studio": "drizzle-kit studio",
+    "db:prune": "tsx scripts/prune.ts",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@better-auth/drizzle-adapter": "1.7.6",
+    "@monaco-editor/react": "4.7.0",
+    "@neondatabase/api-client": "2.7.3",
+    "@tanstack/react-table": "9.2.4",
+    "better-auth": "1.7.6",
+    "clsx": "2.1.1",
+    "date-fns": "4.4.0",
+    "drizzle-orm": "0.45.3",
+    "geist": "1.7.2",
+    "lucide-react": "1.49.0",
+    "next": "16.3.8",
+    "node-sql-parser": "5.4.0",
+    "postgres": "3.4.9",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwind-merge": "3.7.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "26.6.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitest/coverage-v8": "5.0.3",
+    "drizzle-kit": "0.31.11",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.8",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "overrides": {
+    "dompurify": "3.4.16",
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    }
+  }
+}

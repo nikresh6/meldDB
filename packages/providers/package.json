@@ -1,0 +1,11 @@
+{
+  "name": "@melddb/providers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@melddb/core": "0.1.0",
+    "postgres": "3.4.9"
+  }
+}
