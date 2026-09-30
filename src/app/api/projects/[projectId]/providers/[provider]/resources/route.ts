@@ -204,8 +204,10 @@ export async function POST(request: Request, context: RouteContext) {
     if (!saved) throw new Error("Provider resource was not persisted.");
 
     let schemaSync = null;
-    if ((input.action === "attach" || input.action === "sync") && dataConnectionUri) {
-      const dataPlane = await providerAdapterForProject(projectId, provider, resource.externalId);
+    if (input.action === "attach" || input.action === "sync") {
+      const dataPlane = provider === "neon"
+        ? await providerAdapterForProject(projectId, provider, resource.externalId)
+        : resolved;
       schemaSync = await syncProviderResourceSchema({
         projectId,
         resourceId: saved.id,
