@@ -215,7 +215,8 @@ export class NeonAdapter implements DatabaseProviderAdapter {
     return Promise.all(tables.map((table) => this.describeTable(externalId, table.name, table.schema ?? undefined)));
   }
 
-  async listTables(_externalId?: string): Promise<TableSummary[]> {
+  async listTables(externalId?: string): Promise<TableSummary[]> {
+    void externalId;
     const result = await this.runDataQuery(
       "select table_schema, table_name from information_schema.tables where table_type = $1 and table_schema not in ($2, $3) order by table_schema, table_name",
       ["BASE TABLE", "pg_catalog", "information_schema"],
