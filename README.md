@@ -54,16 +54,16 @@ Open [http://localhost:3000](http://localhost:3000). Never commit `.env.local`; 
 
 ### Required environment variables
 
+For the simplest Vercel deployment, only two secrets are required:
+
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | Pooled Neon connection for MeldDB's internal control plane |
-| `BETTER_AUTH_SECRET` | At least 32 random bytes for session/auth signing |
-| `BETTER_AUTH_URL` | Canonical auth origin, e.g. `http://localhost:3000` |
-| `APP_URL` | Canonical public app origin |
-| `CREDENTIAL_ENCRYPTION_KEY` | At least 32 random bytes used to derive the AES-256-GCM key |
-| `CREDENTIAL_ENCRYPTION_KEY_VERSION` | Current integer encryption-key version |
+| `CREDENTIAL_ENCRYPTION_KEY` | Exactly 32 random bytes, typically a 64-character hex value, for AES-256-GCM credential encryption |
 
-Supabase and Cloudflare owner OAuth variables are optional during development; their UI shows a configuration-required state until configured. Neon keys are supplied by each user and encrypted in the control plane.
+`CREDENTIAL_ENCRYPTION_KEY_VERSION` defaults to `1`. `BETTER_AUTH_SECRET` is optional; when omitted, MeldDB deterministically derives a separate auth-signing secret from the credential key. On Vercel, `APP_URL` and `BETTER_AUTH_URL` are inferred from Vercel system URLs.
+
+Supabase and Cloudflare owner OAuth variables remain optional until those integrations are activated. Their callback URLs are inferred automatically on Vercel unless explicitly overridden. Neon keys are supplied by each user through MeldDB and encrypted in the control plane.
 
 See [docs/development.md](docs/development.md), [docs/deployment.md](docs/deployment.md), and [.env.example](.env.example).
 
@@ -127,7 +127,9 @@ See [docs/security.md](docs/security.md) and [docs/unified-sql.md](docs/unified-
 
 ## Deployment
 
-The Next.js app is configured for standalone output and can deploy to Vercel or another Node 22 platform. Production requires database migrations, environment secrets, canonical OAuth callback URLs, and a daily retention-pruning job. `/api/health` checks only control-plane reachability and returns no sensitive details.
+Vercel is the easiest path. The repository includes `vercel.json`, which applies committed Drizzle migrations automatically before the production build. Import the GitHub repository into Vercel and add only `DATABASE_URL` and `CREDENTIAL_ENCRYPTION_KEY` to get the core MeldDB app online. Vercel system URLs configure the production auth origin automatically.
+
+Supabase and Cloudflare OAuth client credentials can be added later. `/api/health` checks only control-plane reachability and returns no sensitive details.
 
 Detailed steps: [docs/deployment.md](docs/deployment.md).
 
