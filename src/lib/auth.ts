@@ -35,6 +35,7 @@ export const auth = betterAuth({
       verification: schema.verifications,
     },
     transaction: true,
+    usePlural: false,
   }),
   emailAndPassword: {
     enabled: true,
