@@ -104,8 +104,8 @@ export class SupabaseAdapter implements DatabaseProviderAdapter {
   async listTables(externalId: string): Promise<TableSummary[]> {
     const result = await this.executeRead({
       resourceId: externalId,
-      sql: "select table_schema, table_name from information_schema.tables where table_type = $1 and table_schema not in ($2, $3) order by table_schema, table_name",
-      params: ["BASE TABLE", "pg_catalog", "information_schema"],
+      sql: "select table_schema, table_name from information_schema.tables where table_type = $1 and table_schema = $2 order by table_name",
+      params: ["BASE TABLE", "public"],
     });
     return result.rows.map((row) => ({
       schema: stringValue(row.table_schema),
