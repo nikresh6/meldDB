@@ -1,36 +1,79 @@
 # Deployment
 
-## Vercel / Node deployment
+## Fastest Vercel deployment
 
-1. Create a production Neon database dedicated to MeldDB's control plane.
-2. Configure every required environment variable from `.env.example` in the deployment secret store.
-3. Set `APP_URL` and `BETTER_AUTH_URL` to the canonical HTTPS origin.
-4. Run `npm run db:migrate` from a trusted release job before promoting the build.
-5. Deploy the Next.js standalone application on Node.js 22.
-6. Verify `GET /api/health` returns `200` without exposing connection details.
-7. Schedule `npm run db:prune` daily using a protected job or platform scheduler.
+MeldDB is configured so the core application can go live without local setup or a manual migration command.
 
-## OAuth applications
+1. Import `nikresh6/meldDB` into Vercel.
+2. Add these two Production environment variables:
+   - `DATABASE_URL`: MeldDB's pooled internal Neon connection string.
+   - `CREDENTIAL_ENCRYPTION_KEY`: exactly 32 random bytes, normally represented as 64 hex characters.
+3. Deploy.
 
-Create owner-controlled Supabase and Cloudflare OAuth applications. Register exact production callback URLs:
+The committed `vercel.json` runs `npm run db:migrate` before `npm run build`, so the first production deployment creates the control-plane schema automatically.
 
-- `https://YOUR_DOMAIN/api/providers/supabase/callback`
-- `https://YOUR_DOMAIN/api/providers/cloudflare/callback`
+MeldDB automatically uses Vercel's system URL variables for its production app/auth origin. `APP_URL` and `BETTER_AUTH_URL` are only needed when you intentionally want to override that behavior.
 
-Use least-privilege management scopes needed for the features you enable. Supabase scope selection currently belongs in the provider application configuration. Cloudflare needs account read plus D1 read/edit. Keep client secrets only in the production secret store.
+`BETTER_AUTH_SECRET` is also optional. If it is absent, MeldDB derives a distinct stable auth-signing secret from `CREDENTIAL_ENCRYPTION_KEY`.
 
-## Domain and cookies
+After deployment, verify:
 
-Use HTTPS and one canonical hostname. Update both URL environment variables and OAuth callback registration together. Better Auth secure cookies are enabled outside development.
+- the homepage loads,
+- signup and login work,
+- a MeldDB project can be created,
+- `GET /api/health` returns `200`.
+
+## Optional provider integrations
+
+### Neon
+
+Customer Neon credentials are entered through MeldDB's **Connect Neon** UI. Do not put a customer's Neon API key into Vercel environment variables.
+
+### Supabase OAuth
+
+When ready to activate Supabase, create an owner-controlled Supabase OAuth application and set:
+
+- `SUPABASE_OAUTH_CLIENT_ID`
+- `SUPABASE_OAUTH_CLIENT_SECRET`
+
+MeldDB infers the production callback URL as:
+
+`https://YOUR_VERCEL_PRODUCTION_DOMAIN/api/providers/supabase/callback`
+
+You may override it with `SUPABASE_OAUTH_REDIRECT_URI` if necessary.
+
+### Cloudflare OAuth
+
+When ready to activate Cloudflare D1, create an owner-controlled Cloudflare OAuth application and set:
+
+- `CLOUDFLARE_OAUTH_CLIENT_ID`
+- `CLOUDFLARE_OAUTH_CLIENT_SECRET`
+
+MeldDB infers the production callback URL as:
+
+`https://YOUR_VERCEL_PRODUCTION_DOMAIN/api/providers/cloudflare/callback`
+
+You may override it with `CLOUDFLARE_OAUTH_REDIRECT_URI` if necessary.
+
+Use least-privilege management scopes. Keep all client secrets in Vercel's secret/environment-variable store.
+
+## Optional production operations
+
+- Set up email delivery before relying on password-reset emails.
+- Schedule `npm run db:prune` daily using a protected scheduler when usage grows.
+- Add a custom domain later if desired.
+- Test provider reconnect, cross-tenant rejection, and destructive confirmations before inviting outside users.
 
 ## Release checklist
 
-- Apply migrations and verify a clean migration run in staging.
-- Run lint, typecheck, tests, build, and Playwright.
-- Verify no `.env` or credentials are tracked.
-- Test OAuth reconnect and account selection.
-- Test project/key cross-tenant rejection.
+- Verify the latest GitHub Actions run is green.
+- Confirm no `.env` or credentials are tracked.
+- Confirm `DATABASE_URL` and `CREDENTIAL_ENCRYPTION_KEY` are configured in Vercel.
+- Confirm the production build ran migrations successfully.
+- Verify `/api/health`.
+- Test signup/login and project creation.
+- Test Connect Neon with a real user-scoped Neon API key.
+- Test Supabase/Cloudflare OAuth after their client credentials are configured.
 - Inspect homepage, auth, onboarding, overview, editors, provider states, docs, and security at desktop/mobile widths.
-- Confirm retention pruning and backup/restore procedures.
 
-Provider OAuth credentials are optional for building the app but required to activate those live connection buttons. Neon customer credentials remain per-user encrypted records, not deployment variables.
+Provider OAuth credentials are optional for the initial deployment. The core product and Neon user-key flow can be tested first.
