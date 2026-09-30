@@ -117,14 +117,33 @@ export class SupabaseAdapter implements DatabaseProviderAdapter {
   async describeTable(externalId: string, table: string, schema = "public"): Promise<TableDescription> {
     const result = await this.executeRead({
       resourceId: externalId,
-      sql: "select column_name, data_type, is_nullable, column_default from information_schema.columns where table_schema = $1 and table_name = $2 order by ordinal_position",
+      sql: `select
+        c.column_name,
+        c.data_type,
+        c.is_nullable,
+        c.column_default,
+        exists (
+          select 1
+          from information_schema.table_constraints tc
+          join information_schema.key_column_usage kcu
+            on tc.constraint_name = kcu.constraint_name
+           and tc.constraint_schema = kcu.constraint_schema
+           and tc.table_name = kcu.table_name
+          where tc.constraint_type = 'PRIMARY KEY'
+            and tc.table_schema = c.table_schema
+            and tc.table_name = c.table_name
+            and kcu.column_name = c.column_name
+        ) as is_primary_key
+      from information_schema.columns c
+      where c.table_schema = $1 and c.table_name = $2
+      order by c.ordinal_position`,
       params: [schema, table],
     });
     const columns: ColumnDescription[] = result.rows.map((row) => ({
       name: stringValue(row.column_name) ?? "unknown",
       dataType: stringValue(row.data_type) ?? "text",
       nullable: row.is_nullable === "YES",
-      primaryKey: false,
+      primaryKey: row.is_primary_key === true,
       defaultValue: stringValue(row.column_default),
     }));
     return { schema, name: table, rowCount: null, columns };
