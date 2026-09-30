@@ -57,7 +57,11 @@ export class SupabaseAdapter implements DatabaseProviderAdapter {
 
   async getAccountCapacity(): Promise<ProviderCapacity> {
     const resources = await this.listResources();
-    return capacityFromFallback(this.providerId, resources.filter((resource) => resource.state !== "disconnected").length);
+    const activeResources = resources.filter((resource) => {
+      const status = typeof resource.metadata.status === "string" ? resource.metadata.status : "";
+      return status === "active" || status.startsWith("active_");
+    });
+    return capacityFromFallback(this.providerId, activeResources.length);
   }
 
   async createResource(input: CreateResourceInput): Promise<ProviderResource> {
